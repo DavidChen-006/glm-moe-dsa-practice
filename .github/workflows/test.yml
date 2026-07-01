@@ -1,0 +1,17 @@
+name: tests
+
+on: [push, pull_request]          # run on every push and PR
+
+jobs:
+  test:
+    runs-on: ubuntu-latest        # a fresh machine GitHub spins up
+    steps:
+      - uses: actions/checkout@v4                 # get the repo
+      - uses: actions/setup-python@v5             # install python
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install torch transformers pytest
+      - name: Run tests
+        working-directory: david                  # tests live in practice/david
+        run: python -m pytest tests/ -q
