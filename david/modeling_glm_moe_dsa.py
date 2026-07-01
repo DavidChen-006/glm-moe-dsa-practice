@@ -5,9 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import GenerationMixin, GlmMoeDsaConfig, GradientCheckpointingLayer
 from transformers.activations import ACT2FN
-from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
-
-from .glm_moe_dsa_pretrained_model import GlmMoeDsaPreTrainedModel
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 
 
 # the plain "eager" attention: softmax(QKt * scaling + mask) @ V  (fallback for the interface)
@@ -143,6 +141,22 @@ class GlmMoeDsaDecoderLayer(GradientCheckpointingLayer):
 
 class GlmMoeDsaRotaryEmbedding(nn.Module):   # RoPE add-on — deferred
     pass
+
+
+class GlmMoeDsaPreTrainedModel(PreTrainedModel):   # merged in from the separate file (fixes circular import)
+    config: GlmMoeDsaConfig
+    base_model_prefix = "model"
+    supports_gradient_checkpointing = True
+    _no_split_modules = ["GlmMoeDsaDecoderLayer"]
+    _skip_keys_device_placement = ["past_key_values"]
+    _supports_sdpa = True
+    _can_record_outputs = {
+        "hidden_states": GlmMoeDsaDecoderLayer,
+        "attentions": GlmMoeDsaAttention,
+    }
+
+    def _init_weights(self, module):
+        super()._init_weights(module)
 
 
 class GlmMoeDsaModel(GlmMoeDsaPreTrainedModel):
