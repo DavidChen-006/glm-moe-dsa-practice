@@ -176,7 +176,28 @@ class GlmMoeDsaModel(GlmMoeDsaPreTrainedModel):
         
         hidden_states = self.norm(hidden_states)
 
+        last_hidden_state = hidden_states
+
         return hidden_states
     
 
 class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel, GenerationMixin):
+    def __init__(self, config):
+        super().__init__(config)
+        self.model = GlmMoeDsaModel(config)
+
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+    def forward(
+        self,
+    ):
+
+        output = self.model(
+
+        )
+
+        hidden_states = outputs.last_hidden_state
+
+        #produce logits
+        logits = self.lm_head(hidden_states)
+
