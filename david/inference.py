@@ -83,5 +83,5 @@ if __name__ == "__main__":
     model.eval()
 
     pipe = TextGenerationPipeline(model=model, tokenizer=CharTokenizer())
-    result = pipe("hello", max_new_tokens=20)
+    result = pipe("bello", max_new_tokens=20)
     print(result)          # gibberish after the prompt — weights are random, untrained
