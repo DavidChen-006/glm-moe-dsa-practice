@@ -7,6 +7,8 @@ config = GlmMoeDsaConfig(vocab_size=96, hidden_size=128, num_hidden_layers=2,
 model = GlmMoeDsaForCausalLM(config)                  # build instance (PyTorch allocates the weights)
 
 input_ids = torch.randint(0, config.vocab_size, (1, 5))   # fake prompt: 1 batch, 5 tokens
+# print(input_ids)
+
 logits = model(input_ids)                              # run forward → PyTorch does all the matmuls
                                                        # logits shape: (1, 5, vocab)
 
