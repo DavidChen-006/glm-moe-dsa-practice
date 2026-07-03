@@ -186,7 +186,7 @@ class GlmMoeDsaIndexer(nn.Module):
         k_pe, k_nope = torch.split(k, [self.qk_rope_head_dim, self.head_dim - self.qk_rope_head_dim], dim=-1)
         k_pe = apply_rotary_pos_emb(k_pe.unsqueeze(2), cos, sin, unsqueeze_dim=2).squeeze(2)  # [B, S, rope_D]
         k = torch.cat([k_pe, k_nope], dim=-1)  # [B, S, D]
-
+apply_rotary_pos_emb 
         # === Key cache (managed by the indexer, not DynamicCache) ===
         # Reset cache on prefill (new prompt) to avoid stale keys / batch-size mismatch
         if seq_len > 1:

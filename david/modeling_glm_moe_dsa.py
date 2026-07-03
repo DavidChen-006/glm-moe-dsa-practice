@@ -17,6 +17,22 @@ def eager_attention_forward(module, query, key, value, attention_mask, scaling, 
     attn_output = torch.matmul(attn_weights, value)   # (batch, heads, seq, head_dim)
     return attn_output, attn_weights
 
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
+def apply_rotary_pos_emb(
+    x: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    ) -> torch.Tensor:
+
+    x_rotated = (x * cos) + (rotate_half(x) * sin)
+
+    return x_rotated
+
 
 class GlmMoeDsaRMSNorm(nn.Module):
     def __init__(self, hidden_size, eps: float = 1e-6) -> None:
@@ -54,17 +70,25 @@ class GlmMoeDsaAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
         attention_mask: torch.Tensor | None = None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor]:   # (attn_output, attn_weights)
+
+        cos, sin = position_embeddings
+
         query_states = self.q_proj(hidden_states)   # FIX: was `hidden_states @ Wq`
         key_states = self.k_proj(hidden_states)
+
+
         value_states = self.v_proj(hidden_states)
 
         batch, seq = hidden_states.shape[:2]
         query_states = query_states.view(batch, seq, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(batch, seq, self.num_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(batch, seq, self.num_heads, self.head_dim).transpose(1, 2)
+
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         combined_mask = attention_mask
 
@@ -121,12 +145,19 @@ class GlmMoeDsaDecoderLayer(GradientCheckpointingLayer):
         self.input_layernorm = GlmMoeDsaRMSNorm(config.hidden_size, config.rms_norm_eps)   # FIX: pass args
         self.post_attention_layernorm = GlmMoeDsaRMSNorm(config.hidden_size, config.rms_norm_eps)
 
-    def forward(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, 
+                hidden_states: torch.Tensor, 
+                attention_mask: torch.Tensor | None = None, 
+                position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None
+                ) -> torch.Tensor:
+
         residual = hidden_states
         # norm
         hidden_states = self.input_layernorm(hidden_states)
         # attention
-        hidden_states, _ = self.self_attn(hidden_states, attention_mask)   # FIX: filled args + unpack
+        hidden_states, _ = self.self_attn(hidden_states, 
+            attention_mask,
+            position_embeddings=position_embeddings)   # FIX: filled args + unpack
         # add
         hidden_states = residual + hidden_states
         # norm
