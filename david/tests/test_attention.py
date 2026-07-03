@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))   # add david/ to
 import torch
 from transformers import GlmMoeDsaConfig
 
-from modeling_glm_moe_dsa import GlmMoeDsaAttention
+from modeling_glm_moe_dsa import GlmMoeDsaAttention, GlmMoeDsaRotaryEmbedding
 
 
 def causal_mask(seq):   # -inf above the diagonal so a token can't see the future
@@ -22,9 +22,12 @@ def test_attention():
     torch.manual_seed(0)
     x = torch.randn(2, 4, config.hidden_size)      # (batch=2, seq=4, hidden=8)
     mask = causal_mask(4)
+    # RoPE angles for positions 0..3 (attention needs the (cos, sin) tuple)
+    rotary = GlmMoeDsaRotaryEmbedding(config)
+    position_embeddings = rotary(x, torch.arange(4).unsqueeze(0))
 
     # ---------- ACT ---------- (run the one operation being tested)
-    out, _weights = attn(x, mask)
+    out, _weights = attn(x, position_embeddings, mask)
 
     # ---------- ASSERT ---------- (check the properties that must hold)
     assert out.shape == x.shape, "attention must preserve shape (B, S, H) -> (B, S, H)"
@@ -33,7 +36,7 @@ def test_attention():
     # causal: changing the LAST token must NOT change the earlier tokens' outputs
     x2 = x.clone()
     x2[:, -1, :] = torch.randn(2, config.hidden_size)   # perturb only the future token
-    out2, _ = attn(x2, mask)
+    out2, _ = attn(x2, position_embeddings, mask)
     assert torch.allclose(out[:, :-1, :], out2[:, :-1, :], atol=1e-5), "earlier tokens must not see the future"
 
 

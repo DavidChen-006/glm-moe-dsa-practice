@@ -177,8 +177,21 @@ class GlmMoeDsaDecoderLayer(GradientCheckpointingLayer):
         return hidden_states
 
 
-class GlmMoeDsaRotaryEmbedding(nn.Module):   # RoPE add-on — deferred
-    pass
+class GlmMoeDsaRotaryEmbedding(nn.Module):   # the angle factory: positions in -> (cos, sin) out
+    def __init__(self, config: GlmMoeDsaConfig, device=None):
+        super().__init__()
+        dim = config.hidden_size // config.num_attention_heads      # head_dim: RoPE acts per head
+        base = config.rope_parameters["rope_theta"]                 # the 10000 in the speed formula
+        # spin speeds, one per pair: theta_i = base^(-2i/dim)  (fast hands first, slow last)
+        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float, device=device) / dim))
+        self.register_buffer("inv_freq", inv_freq, persistent=False)   # fixed math, not a weight
+
+    @torch.no_grad()
+    def forward(self, x, position_ids):
+        # angle grid: every position x every speed -> (batch, seq, dim/2)
+        angles = position_ids[:, :, None].float() * self.inv_freq[None, None, :]
+        emb = torch.cat((angles, angles), dim=-1)    # duplicate so both partner slots share an angle
+        return emb.cos().to(x.dtype), emb.sin().to(x.dtype)
 
 
 class GlmMoeDsaPreTrainedModel(PreTrainedModel):   # merged in from the separate file (fixes circular import)
@@ -207,7 +220,9 @@ class GlmMoeDsaModel(GlmMoeDsaPreTrainedModel):
         self.layers = nn.ModuleList(
             [GlmMoeDsaDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
+
         self.norm = GlmMoeDsaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.rotary_emb = GlmMoeDsaRotaryEmbedding(config=config)
 
     def forward(
         self,
@@ -218,13 +233,18 @@ class GlmMoeDsaModel(GlmMoeDsaPreTrainedModel):
             inputs_embeds = self.embed_tokens(input_ids)
 
         hidden_states = inputs_embeds                    # FIX: was input_embeds (typo)
+        # positions are just 0..seq-1, one row shared by the whole batch
+        position_ids = torch.arange(hidden_states.shape[1], device=hidden_states.device).unsqueeze(0)
+        position_embeddings = self.rotary_emb(hidden_states, position_ids=position_ids)
 
         # causal mask: -inf above the diagonal so a token can't see the future
         seq_len = hidden_states.shape[1]
         causal_mask = torch.full((seq_len, seq_len), float("-inf"), device=hidden_states.device).triu(1)
 
         for decoder_layer in self.layers[: self.config.num_hidden_layers]:
-            hidden_states = decoder_layer(hidden_states, causal_mask)   # FIX: filled args
+            hidden_states = decoder_layer(hidden_states, 
+                causal_mask,
+                position_embeddings=position_embeddings)   # FIX: filled args
 
         hidden_states = self.norm(hidden_states)
         return hidden_states

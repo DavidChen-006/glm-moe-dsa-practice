@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))   # add david/ to
 import torch
 from transformers import GlmMoeDsaConfig
 
-from modeling_glm_moe_dsa import GlmMoeDsaDecoderLayer
+from modeling_glm_moe_dsa import GlmMoeDsaDecoderLayer, GlmMoeDsaRotaryEmbedding
 
 
 def causal_mask(seq):
@@ -22,9 +22,12 @@ def test_decoder_layer():
     torch.manual_seed(0)
     x = torch.randn(2, 4, config.hidden_size)      # (batch=2, seq=4, hidden=8)
     mask = causal_mask(4)
+    # RoPE angles for positions 0..3 (the layer relays the (cos, sin) tuple to attention)
+    rotary = GlmMoeDsaRotaryEmbedding(config)
+    position_embeddings = rotary(x, torch.arange(4).unsqueeze(0))
 
     # ---------- ACT ---------- (run one full transformer layer)
-    out = layer(x, mask)
+    out = layer(x, mask, position_embeddings=position_embeddings)
 
     # ---------- ASSERT ---------- (the layer's properties)
     assert out.shape == x.shape, "layer must preserve shape (B, S, H) -> (B, S, H)"
@@ -33,7 +36,7 @@ def test_decoder_layer():
     # causal still holds through the whole layer (attention is causal; norm/MLP are per-token)
     x2 = x.clone()
     x2[:, -1, :] = torch.randn(2, config.hidden_size)   # perturb only the future token
-    out2 = layer(x2, mask)
+    out2 = layer(x2, mask, position_embeddings=position_embeddings)
     assert torch.allclose(out[:, :-1, :], out2[:, :-1, :], atol=1e-5), "earlier tokens must not see the future"
 
 
