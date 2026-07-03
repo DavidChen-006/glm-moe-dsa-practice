@@ -37,7 +37,11 @@ class TextGenerationPipeline:
         input_ids = model_inputs["input_ids"]
         prompt_text = model_inputs.pop("prompt_text")
 
-        generated_sequence = self.model.generate(input_ids, **generate_kwargs)   # reference line 403
+        generated_sequence = self.model.generate(              # reference line 403
+            input_ids,
+            eos_token_id=self.tokenizer.eos_token_id,          # stop when the model says "I'm done" (id 2)
+            **generate_kwargs,
+        )
 
         return {
             "generated_sequence": generated_sequence,
