@@ -9,9 +9,10 @@ import os
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from modeling_glm_moe_dsa import GlmMoeDsaConfig
+from modeling_glm_moe_dsa import GlmMoeDsaConfig, GlmMoeDsaForCausalLM
 
 
 class PretrainDataset(Dataset):
@@ -64,13 +65,17 @@ if __name__ == "__main__":
     )
     lm_config._attn_implementation = "eager"
 
-    # ========== 5. data (model + optimizer arrive in the next spike) ==========
+    # ========== 5. model + data (optimizer arrives in the next spike) ==========
+    model = GlmMoeDsaForCausalLM(lm_config).to(args.device)
+    print(f"model params: {sum(p.numel() for p in model.parameters()):,}  device: {args.device}")
+
     train_ds = PretrainDataset(args.data_path, max_length=args.max_seq_len)
     loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
 
-    # spike-1 sanity check: one batch, shapes + the shift visible
+    # spike-2 sanity check: one forward pass, graded.
+    # untrained model must score ~ln(6400) = 8.76 — the loss of pure random guessing.
     input_ids, labels = next(iter(loader))
-    print(f"dataset windows: {len(train_ds):,}")
-    print(f"batch input_ids: {tuple(input_ids.shape)}  labels: {tuple(labels.shape)}")
-    print(f"shift check: input[0,1:6] = {input_ids[0, 1:6].tolist()}")
-    print(f"             labels[0,0:5] = {labels[0, 0:5].tolist()}   <- must be identical")
+    input_ids, labels = input_ids.to(args.device), labels.to(args.device)
+    logits = model(input_ids)                                    # (B, S, vocab)
+    loss = F.cross_entropy(logits.view(-1, lm_config.vocab_size), labels.view(-1))
+    print(f"first-batch loss: {loss.item():.4f}   (random-guess baseline: ln(6400) = {np.log(6400):.4f})")
