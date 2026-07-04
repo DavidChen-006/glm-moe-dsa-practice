@@ -24,6 +24,19 @@ def get_lr(current_step, total_steps, lr):   # minimind's schedule, verbatim (tr
     return lr * (0.1 + 0.45 * (1 + math.cos(math.pi * current_step / total_steps)))
 
 
+def compute_loss(logits, labels):
+    """Grade logits against labels — handling the two dataset contracts:
+    - bin (stream windows): labels arrive PRE-SHIFTED by the dataset -> compare directly.
+    - jsonl (minimind docs): labels arrive UNSHIFTED (minimind shifts inside its model;
+      our model returns bare logits) -> shift here, and -100 padding is skipped via
+      ignore_index (cross_entropy's convention, same as minimind relies on)."""
+    if args.dataset == "jsonl":
+        logits = logits[:, :-1, :]                    # prediction at position t...
+        labels = labels[:, 1:]                        # ...graded against token t+1
+    return F.cross_entropy(logits.reshape(-1, lm_config.vocab_size), labels.reshape(-1),
+                           ignore_index=-100)
+
+
 def train_epoch(epoch, loader, iters):
     """Mirror of minimind's train_epoch: lr schedule -> forward -> grade -> backward
     -> clip -> step, with periodic logging. (No GradScaler: that's fp16/CUDA armor.)"""
@@ -37,7 +50,7 @@ def train_epoch(epoch, loader, iters):
             param_group["lr"] = lr
 
         logits = model(input_ids)                                # (B, S, vocab)
-        loss = F.cross_entropy(logits.view(-1, lm_config.vocab_size), labels.view(-1))
+        loss = compute_loss(logits, labels)
         loss = loss / args.accumulation_steps
 
         loss.backward()
@@ -76,13 +89,14 @@ def estimate_val_loss(num_batches=20):
             break
         input_ids, labels = input_ids.to(args.device), labels.to(args.device)
         logits = model(input_ids)
-        losses.append(F.cross_entropy(logits.view(-1, lm_config.vocab_size), labels.view(-1)).item())
+        losses.append(compute_loss(logits, labels).item())
     return sum(losses) / len(losses)
 
 
-class PretrainDataset(Dataset):
-    """Mirror of minimind's PretrainDataset, over a pre-tokenized .bin instead of jsonl.
-    Sample i = window of ids starting at i; input/labels = the window shifted by one."""
+class BinPretrainDataset(Dataset):
+    """Stream-style dataset over a pre-tokenized .bin (nanoGPT lineage).
+    Sample i = window of ids starting at i; input/labels = the window shifted by one.
+    (The doc-style alternative is lm_dataset.PretrainDataset — minimind's, verbatim.)"""
 
     def __init__(self, data_path, max_length=256):
         self.ids = np.fromfile(data_path, dtype=np.uint16)
@@ -114,6 +128,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_hidden_layers", default=2, type=int)
     parser.add_argument("--max_seq_len", default=256, type=int)
     parser.add_argument("--data_path", type=str, default="data/train.bin")
+    parser.add_argument("--dataset", type=str, default="bin", choices=["bin", "jsonl"],
+                        help="bin = stream windows (nanoGPT-style); jsonl = minimind docs")
     parser.add_argument("--max_steps", type=int, default=10**9, help="stop early (smoke tests)")
     args = parser.parse_args()
 
@@ -137,9 +153,17 @@ if __name__ == "__main__":
     model.train()
     print(f"model params: {sum(p.numel() for p in model.parameters()):,}  device: {args.device}")
 
-    train_ds = PretrainDataset(args.data_path, max_length=args.max_seq_len)
+    if args.dataset == "jsonl":                       # doc-style: minimind's class, untouched
+        from transformers import AutoTokenizer
+
+        from lm_dataset import PretrainDataset
+        tokenizer = AutoTokenizer.from_pretrained("..")
+        train_ds = PretrainDataset("data/pretrain_shakespeare.jsonl", tokenizer, max_length=args.max_seq_len)
+        val_ds = PretrainDataset("data/val_shakespeare.jsonl", tokenizer, max_length=args.max_seq_len)
+    else:                                             # stream-style: windows over the bins
+        train_ds = BinPretrainDataset(args.data_path, max_length=args.max_seq_len)
+        val_ds = BinPretrainDataset("data/val.bin", max_length=args.max_seq_len)
     loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-    val_ds = PretrainDataset("data/val.bin", max_length=args.max_seq_len)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=True)
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
 
