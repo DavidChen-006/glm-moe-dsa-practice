@@ -49,7 +49,7 @@ def train_epoch(epoch, loader, iters):
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 
-        logits = model(input_ids)                                # (B, S, vocab)
+        logits = model(input_ids).logits                         # envelope contract: read .logits
         loss = compute_loss(logits, labels)
         loss = loss / args.accumulation_steps
 
@@ -88,7 +88,7 @@ def estimate_val_loss(num_batches=20):
         if i >= num_batches:
             break
         input_ids, labels = input_ids.to(args.device), labels.to(args.device)
-        logits = model(input_ids)
+        logits = model(input_ids).logits
         losses.append(compute_loss(logits, labels).item())
     return sum(losses) / len(losses)
 
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_steps", type=int, default=10**9, help="stop early (smoke tests)")
     args = parser.parse_args()
 
-    # ========== 1. seed + run from training/ (so data/checkpoint paths work anywhere) ==========
+    # ========== 1. seed + run from training/ (so data/checkpoint paths anywhere) ==========
     torch.manual_seed(42)
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 

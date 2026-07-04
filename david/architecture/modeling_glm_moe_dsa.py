@@ -265,18 +265,18 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel, GenerationMixin):
         hidden_states = self.model(input_ids)
         logits = self.lm_head(hidden_states)           # produce logits
 
-        if labels is None:                             # INFERENCE personality: pure ids -> logits
-            return logits
-
-        # TRAINING personality (reference lines 831-833): grade the logits in-model.
+        # grade in-model when answers are provided (reference lines 831-833).
         # shift: prediction at position t is graded against token t+1 (labels arrive UNSHIFTED)
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = labels[:, 1:].contiguous()
-        loss = F.cross_entropy(
-            shift_logits.view(-1, self.config.vocab_size),
-            shift_labels.view(-1),
-            ignore_index=-100,                         # padding/masked positions carry no loss
-        )
+        loss = None
+        if labels is not None:
+            shift_logits = logits[:, :-1, :].contiguous()
+            shift_labels = labels[:, 1:].contiguous()
+            loss = F.cross_entropy(
+                shift_logits.view(-1, self.config.vocab_size),
+                shift_labels.view(-1),
+                ignore_index=-100,                     # padding/masked positions carry no loss
+            )
+        # GLM's contract: ALWAYS return the envelope; consumers read .logits / .loss
         return CausalLMOutputWithPast(loss=loss, logits=logits)
 
     def generate(self, input_ids, max_new_tokens=20, eos_token_id=None):
@@ -284,7 +284,7 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel, GenerationMixin):
         forward -> pick next token -> append -> stop on EOS or the max ceiling."""
         for _ in range(max_new_tokens):
             with torch.no_grad():
-                logits = self(input_ids)                       # (batch, seq, vocab)
+                logits = self(input_ids).logits                # envelope contract: read .logits
             next_token = logits[0, -1].argmax()                # greedy decoding
             input_ids = torch.cat([input_ids, next_token.view(1, 1)], dim=1)
             if eos_token_id is not None and next_token.item() == eos_token_id:

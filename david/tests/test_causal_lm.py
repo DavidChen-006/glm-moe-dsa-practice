@@ -25,7 +25,7 @@ def test_causal_lm():
 
     # ---------- ACT ---------- (ids -> logits: the full forward pass)
     with torch.no_grad():
-        logits = model(input_ids)
+        logits = model(input_ids).logits   # envelope contract (GLM-style): output object, read .logits
 
     # ---------- ASSERT ---------- (properties of full inference)
     assert logits.shape == (2, 5, config.vocab_size), "ids (B, S) -> logits (B, S, vocab)"
@@ -40,7 +40,7 @@ def test_causal_lm():
     ids2 = input_ids.clone()
     ids2[:, -1] = (input_ids[:, -1] + 1) % config.vocab_size
     with torch.no_grad():
-        logits2 = model(ids2)
+        logits2 = model(ids2).logits
     assert torch.allclose(logits[:, :-1, :], logits2[:, :-1, :], atol=1e-5), "earlier tokens must not see the future"
 
 
