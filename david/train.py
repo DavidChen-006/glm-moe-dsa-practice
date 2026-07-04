@@ -52,9 +52,30 @@ def train_epoch(epoch, loader, iters):
             print(f"Epoch:[{epoch + 1}/{args.epochs}]({step}/{iters}), "
                   f"loss: {current_loss:.4f}, lr: {lr:.8f}, eta: {eta_min:.0f}min")
 
+        if step % args.save_interval == 0 or step == iters:
+            val = estimate_val_loss()
+            ckp = f"{args.save_dir}/pretrain_{lm_config.hidden_size}.pth"
+            torch.save(model.state_dict(), ckp)                  # mirror minimind's save (line 68)
+            print(f"  val_loss: {val:.4f}   -> saved {ckp}")
+            model.train()
+
         if step >= args.max_steps:
             print(f"reached --max_steps {args.max_steps}, stopping")
             break
+
+
+@torch.no_grad()
+def estimate_val_loss(num_batches=20):
+    """Grade the model on UNSEEN text (val.bin) — measured, never learned from."""
+    model.eval()
+    losses = []
+    for i, (input_ids, labels) in enumerate(val_loader):
+        if i >= num_batches:
+            break
+        input_ids, labels = input_ids.to(args.device), labels.to(args.device)
+        logits = model(input_ids)
+        losses.append(F.cross_entropy(logits.view(-1, lm_config.vocab_size), labels.view(-1)).item())
+    return sum(losses) / len(losses)
 
 
 class PretrainDataset(Dataset):
@@ -115,6 +136,8 @@ if __name__ == "__main__":
 
     train_ds = PretrainDataset(args.data_path, max_length=args.max_seq_len)
     loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
+    val_ds = PretrainDataset("data/val.bin", max_length=args.max_seq_len)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=True)
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
 
     # ========== 8. train ==========
