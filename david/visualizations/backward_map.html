@@ -1,0 +1,235 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Forward ↑ / Backward ↓ — the two-way road</title>
+<style>
+  :root { --bg:#111318; --card:#1a1e26; --line:#2c313c; --txt:#e6eaf2; --dim:#8b94a7; }
+  body { font: 14px/1.5 -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--txt); margin: 0; }
+  header { position: sticky; top: 0; z-index: 10; background: #14171d; border-bottom: 1px solid var(--line);
+           padding: 12px 22px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; }
+  button { background: #262b36; color: var(--txt); border: 1px solid #3a4150; border-radius: 8px;
+           padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #2f3542; }
+  button.active { background: #3b2f10; border-color: #8a6d00; color: #ffd700; }
+  #status { color: var(--dim); font-size: 13px; min-width: 300px; }
+  .wrap { max-width: 980px; margin: 26px auto 120px; padding: 0 20px; position: relative; }
+
+  /* the two direction rails */
+  .rails { position: absolute; left: -8px; top: 0; bottom: 0; width: 0; }
+  .rail-label { position: sticky; top: 70px; writing-mode: vertical-rl; color: var(--dim); font-size: 12px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          margin: 0 0 0 0; padding: 14px 18px; position: relative; transition: box-shadow .25s, border-color .25s; }
+  .card.lit { border-color: #ffd700; box-shadow: 0 0 24px rgba(255, 215, 0, .18); }
+  .card h2 { font-size: 14px; margin: 0 0 2px; display: flex; align-items: center; gap: 10px; }
+  .card .sub { color: var(--dim); font-size: 12px; margin-bottom: 8px; }
+  .tag { font-size: 10.5px; padding: 1px 8px; border-radius: 8px; letter-spacing: .4px; }
+
+  .connector { display: flex; justify-content: center; gap: 60px; height: 44px; align-items: center;
+               color: var(--dim); font-size: 20px; position: relative; }
+  .connector .f { color: #6fbf73; } .connector .b { color: #ff9d5c; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11.5px; padding: 3px 9px; border-radius: 8px; background: #232834; border: 1px solid #333a48;
+          cursor: default; position: relative; }
+  .chip:hover::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 6px); white-space: nowrap;
+          background: #000; border: 1px solid #444; color: #fff; padding: 5px 9px; border-radius: 7px; font-size: 11.5px; z-index: 20; }
+  .chip b { font-weight: 600; }
+  .chip.plumb { color: #79839a; font-style: italic; }
+
+  .mailbox { display: inline-flex; align-items: center; gap: 6px; background: #2b2305; border: 1px solid #8a6d00;
+             color: #ffd700; border-radius: 9px; padding: 3px 10px; font-size: 11.5px; margin: 3px 4px 0 0; }
+  .mailbox .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b5600; transition: background .3s, box-shadow .3s; }
+  .mailbox.full .dot { background: #ffd700; box-shadow: 0 0 8px #ffd700; }
+
+  /* section accent colors */
+  .grading  { border-left: 4px solid #ff8fa3; } .grading  .tag { background:#4a1f28; color:#ff8fa3; }
+  .lmhead   { border-left: 4px solid #c792ea; } .lmhead   .tag { background:#3a2450; color:#c792ea; }
+  .fnorm    { border-left: 4px solid #ffc266; } .fnorm    .tag { background:#403013; color:#ffc266; }
+  .layer    { border-left: 4px solid #52708f; } .layer    .tag { background:#1c2836; color:#9cc0e8; }
+  .mlpc     { border-left: 4px solid #86e08a; } .mlpc     .tag { background:#1d3a1d; color:#86e08a; }
+  .attn     { border-left: 4px solid #7cc4ff; } .attn     .tag { background:#16324a; color:#7cc4ff; }
+  .embed    { border-left: 4px solid #e0aa70; } .embed    .tag { background:#3a2a14; color:#e0aa70; }
+  .loss     { border-left: 4px solid #ff5470; } .loss     .tag { background:#4a1f28; color:#ff8fa3; }
+
+  .inner { border: 1px dashed #39404e; border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+  .inner h3 { margin: 0 0 6px; font-size: 12.5px; color: #b9c2d4; }
+
+  /* residual skip curve */
+  .skipnote { position: absolute; right: -14px; top: 20px; bottom: 20px; width: 46px; pointer-events: none; }
+
+  .legendbar { color: var(--dim); font-size: 12px; }
+  .kf { color: #6fbf73; } .kb { color: #ff9d5c; }
+</style></head><body>
+
+<header>
+  <h1>The two-way road: forward ↑ builds, backward ↓ blames</h1>
+  <button id="playB" onclick="play('b')">▶ run BACKWARD (blame flows ↓)</button>
+  <button id="playF" onclick="play('f')">▶ run FORWARD (data flows ↑)</button>
+  <span id="status">104 real ops from your toy GLM, grouped into the blocks you know.</span>
+</header>
+
+<div class="wrap">
+<p class="legendbar">Read <span class="kf">forward from the BOTTOM up</span> (ids → ... → loss) or
+<span class="kb">backward from the TOP down</span> (seed 1.0 → ... → 11 gold mailboxes).
+Every chip is a real recorded op (#id from the terminal demo). Hover any chip for what it does.
+Gold pills are the mailboxes — where blame parks. <b>The animation buttons make the direction visible.</b></p>
+
+<!-- ======================= TOP: LOSS ======================= -->
+<div class="card loss" id="s0">
+  <h2>loss <span class="tag">scalar, shape ()</span></h2>
+  <div class="sub">forward's final product · backward's starting line (seed = 1.0)</div>
+</div>
+<div class="connector"><span class="f">↑</span><span class="b">↓</span></div>
+
+<div class="card grading" id="s1">
+  <h2>GRADING <span class="tag">cross-entropy + the shift</span></h2>
+  <div class="sub">your 7-line grading logic — weightless: pure road, no mailboxes</div>
+  <div class="chips">
+    <span class="chip" data-tip="pick correct token's log-prob, negate, average"><b>#1</b> NllLoss</span>
+    <span class="chip" data-tip="scores -> log-probabilities"><b>#2</b> LogSoftmax</span>
+    <span class="chip" data-tip="flatten (B,S,V) -> (B·S, V) for the grader"><b>#3</b> View</span>
+    <span class="chip" data-tip="logits[:, :-1] — grade position t against token t+1"><b>#4</b> Slice = THE SHIFT</span>
+  </div>
+</div>
+<div class="connector"><span class="f">↑</span><span class="b">↓</span></div>
+
+<div class="card lmhead" id="s2">
+  <h2>LM HEAD <span class="tag">hidden state → 32 similarity scores</span></h2>
+  <div class="sub">one learned matrix — the similarity ruler. Your model's biggest weight.</div>
+  <div class="chips">
+    <span class="chip" data-tip="hidden @ W^T — the dot products against every vocab row"><b>#6</b> Mm (the matmul)</span>
+    <span class="chip plumb" data-tip="nn.Linear internal reshapes">#5 #7 reshapes</span>
+    <span class="chip plumb" data-tip="weight matrix transposed for the matmul">#103 T</span>
+  </div>
+  <div><span class="mailbox" data-mb><span class="dot"></span>#104 lm_head.weight</span></div>
+</div>
+<div class="connector"><span class="f">↑</span><span class="b">↓</span></div>
+
+<div class="card fnorm" id="s3">
+  <h2>FINAL NORM <span class="tag">RMSNorm</span></h2>
+  <div class="sub">the five-op fingerprint you can now recognize anywhere</div>
+  <div class="chips">
+    <span class="chip" data-tip="x^2 — start of the variance"><b>#102</b> Pow</span>
+    <span class="chip" data-tip="mean of squares"><b>#101</b> Mean</span>
+    <span class="chip" data-tip="+ epsilon"><b>#100</b> Add</span>
+    <span class="chip" data-tip="1/sqrt(variance)"><b>#99</b> Rsqrt</span>
+    <span class="chip" data-tip="normalize, then scale by learned gamma"><b>#8 #10</b> Mul</span>
+  </div>
+  <div><span class="mailbox" data-mb><span class="dot"></span>#9 model.norm.weight (gamma)</span></div>
+</div>
+<div class="connector"><span class="f">↑</span><span class="b">↓</span></div>
+
+<!-- ======================= DECODER LAYER ======================= -->
+<div class="card layer" id="s4">
+  <h2>DECODER LAYER × 1 <span class="tag">GLM: this box × 78</span></h2>
+  <div class="sub">the residual stream (#11, #12 Adds) is the highway — each sublayer is a detour that
+  merges back in. Blame photocopies itself at every merge.</div>
+
+  <div class="inner mlpc" id="s4m">
+    <h3>MLP sublayer — down(silu(up(x))) + post-norm</h3>
+    <div class="chips">
+      <span class="chip" data-tip="up_proj matmul"><b>#86</b> Mm(up)</span>
+      <span class="chip" data-tip="the activation"><b>#84</b> SiLU</span>
+      <span class="chip" data-tip="down_proj matmul"><b>#82</b> Mm(down)</span>
+      <span class="chip" data-tip="post_attention RMSNorm ops">#88–#94 norm quintet</span>
+      <span class="chip plumb" data-tip="reshapes around the matmuls">#81 #83 #85 #87 reshapes</span>
+    </div>
+    <div>
+      <span class="mailbox" data-mb><span class="dot"></span>#96 mlp.up_proj.weight</span>
+      <span class="mailbox" data-mb><span class="dot"></span>#98 mlp.down_proj.weight</span>
+      <span class="mailbox" data-mb><span class="dot"></span>#89 post_attention_layernorm.weight</span>
+    </div>
+  </div>
+
+  <div class="inner attn" id="s4a">
+    <h3>ATTENTION sublayer — the poster boy, disassembled into its real ops</h3>
+    <div class="chips">
+      <span class="chip" data-tip="weights @ V — mixing the ingredients"><b>#22</b> Bmm (weights@V)</span>
+      <span class="chip" data-tip="THE attention softmax over scores"><b>#25</b> Softmax</span>
+      <span class="chip" data-tip="scores + causal mask (-inf staircase)"><b>#26</b> Add (+mask)</span>
+      <span class="chip" data-tip="Q·K^T — every query against every key"><b>#29</b> Bmm (QK^T)</span>
+      <span class="chip" data-tip="q_proj / k_proj / v_proj / o_proj matmuls"><b>#16 #37 #61 #75</b> Mm (projections)</span>
+      <span class="chip" data-tip="head split/merge transposes">#20 #34 #55 #58 #72 Transpose</span>
+      <span class="chip" data-tip="input RMSNorm quintet">#39–#45 norm quintet</span>
+      <span class="chip plumb" data-tip="reshapes/broadcasts/copies">~18 reshape/expand/clone</span>
+    </div>
+    <div class="inner" style="border-color:#155e58; margin-top:8px;">
+      <h3 style="color:#5fe0d5;">RoPE (inside attention, on q &amp; k only)</h3>
+      <div class="chips">
+        <span class="chip" data-tip="x * cos"><b>#48 #65</b> Mul(·cos)</span>
+        <span class="chip" data-tip="rotate_half: swap halves"><b>#49 #66</b> Cat</span>
+        <span class="chip" data-tip="rotate_half: negate incoming half"><b>#50 #67</b> Neg</span>
+        <span class="chip" data-tip="rotate_half slices"><b>#51 #52 #68 #69</b> Slice</span>
+      </div>
+    </div>
+    <div>
+      <span class="mailbox" data-mb><span class="dot"></span>#47 self_attn.q_proj.weight</span>
+      <span class="mailbox" data-mb><span class="dot"></span>#64 self_attn.k_proj.weight</span>
+      <span class="mailbox" data-mb><span class="dot"></span>#78 self_attn.v_proj.weight</span>
+      <span class="mailbox" data-mb><span class="dot"></span>#80 self_attn.o_proj.weight</span>
+      <span class="mailbox" data-mb><span class="dot"></span>#40 input_layernorm.weight</span>
+    </div>
+  </div>
+</div>
+<div class="connector"><span class="f">↑</span><span class="b">↓</span></div>
+
+<div class="card embed" id="s5">
+  <h2>EMBEDDINGS <span class="tag">id → dictionary vector</span></h2>
+  <div class="sub">where forward begins and backward ends. Referenced by MANY roads (all the residual
+  merges lead here) — its mailbox collects blame from every path.</div>
+  <div class="chips">
+    <span class="chip" data-tip="row lookup: id -> vector"><b>#13</b> Embedding</span>
+  </div>
+  <div><span class="mailbox" data-mb><span class="dot"></span>#14 embed_tokens.weight</span></div>
+</div>
+
+<div class="card" style="margin-top:26px; border-style: dashed;">
+  <h2 style="color:#8b94a7;">the count</h2>
+  <div class="sub">104 ops total → 4 grading + ~30 attention + ~12 MLP + 15 norm + 2 embed/lm_head cores
+  + <b>~40 plumbing</b> (reshapes, transposes, casts). The iceberg is mostly plumbing —
+  and every single op, plumbing included, has a backward twin, because blame must travel the whole road.
+  Only the <span style="color:#ffd700;">11 gold mailboxes</span> actually learn.</div>
+</div>
+</div>
+
+<script>
+const order = ['s0','s1','s2','s3','s4','s4m','s4a','s5'];
+let timer = null;
+function play(dir) {
+  clearTimeout(timer);
+  document.querySelectorAll('.card, .inner').forEach(c => c.classList.remove('lit'));
+  document.querySelectorAll('.mailbox').forEach(m => m.classList.remove('full'));
+  const seq = dir === 'b' ? order : [...order].reverse();
+  const label = dir === 'b'
+    ? ['seed 1.0 enters at loss', 'grading ops bend the blame', 'lm_head: first mailbox gets its grad',
+       'final norm: gamma collects', 'entering the decoder layer...', 'MLP weights collect',
+       'attention weights collect (q,k,v,o + norm)', 'embeddings: last mailbox. 11/11 delivered.']
+    : ['embeddings: ids become vectors', 'attention gathers context (RoPE stamps positions)',
+       'MLP digests per token', 'residual highway carries it on', 'final norm cleans up',
+       'lm_head scores all 32 tokens', 'grading: shift + cross-entropy', 'loss: one scalar, tape attached'];
+  let i = 0, delivered = 0;
+  const status = document.getElementById('status');
+  (function step() {
+    if (i > 0) {
+      const prev = document.getElementById(seq[i-1]);
+      prev.querySelectorAll(':scope > div > .mailbox, :scope .mailbox').forEach(m => {
+        if (!m.classList.contains('full')) { m.classList.add('full'); delivered++; }
+      });
+    }
+    if (i >= seq.length) {
+      status.textContent = dir === 'b'
+        ? `backward complete: ${delivered} mailboxes filled — optimizer.step() may now nudge.`
+        : 'forward complete: loss produced, tape recorded — ready for backward.';
+      return;
+    }
+    const el = document.getElementById(seq[i]);
+    el.classList.add('lit');
+    el.scrollIntoView({behavior:'smooth', block:'center'});
+    status.textContent = (dir==='b' ? '↓ ' : '↑ ') + label[i];
+    setTimeout(() => el.classList.remove('lit'), 1500);
+    i++;
+    timer = setTimeout(step, 1100);
+  })();
+}
+</script>
+</body></html>
