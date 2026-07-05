@@ -42,6 +42,16 @@ node = loss.grad_fn
 print("=" * 70)
 print(type(node))
 print(type(node).__mro__)
+
+(dir(node))                              # everything (noisy)
+
+print("\n=== public attrs (no dunders) ===")
+print([a for a in dir(node) if not a.startswith('__')])
+print("\n=== _saved_* (forward homework) ===")
+saved = [a for a in dir(node) if a.startswith('_saved')]
+print(saved)
+
+# [a for a in dir(node) if a.startswith('_saved')] # stashed forward inputs
 # print("=" * 70)
 # print("2) walk the chain: each node = one forward op, recorded in reverse")
 # print("=" * 70)
