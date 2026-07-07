@@ -1,4 +1,5 @@
 import argparse
+from david.training.train import optimizer
 import torch
 from torch.utils.data import DataLoader
 
@@ -14,9 +15,11 @@ def train_epoch(epoch, loader, iters): #training loop
         #backprop 
         loss.backward()
 
-        #gradient descent, update weights
+        #gradient descent, update weights: w  ←  w  −  lr · (∂L/∂w) + AdamW optimizer
+        optimizer.step()
 
         #clean
+        optimizer.zero_grad()
 
 
 if __name__ == "__main__":
@@ -26,6 +29,7 @@ if __name__ == "__main__":
 
     train_ds = PretrainDataset()
 
+    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
 
     for epoch in range(args.epochs):   #outer training loop
         loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)   # fresh shuffled batches
