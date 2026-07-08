@@ -31,6 +31,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32, help="batch size")
     parser.add_argument("--hidden_size", default=128, type=int)
     parser.add_argument("--num_hidden_layers", default=2, type=int)
+    parser.add_argument("--learning_rate", type=float, default=5e-4)
 
     args = parser.parse_args()
 
