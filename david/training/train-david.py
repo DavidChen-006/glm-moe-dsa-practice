@@ -32,14 +32,18 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_size", default=128, type=int)
     parser.add_argument("--num_hidden_layers", default=2, type=int)
     parser.add_argument("--learning_rate", type=float, default=5e-4)
+    parser.add_argument("--max_seq_len", default=512, type=int)
 
     args = parser.parse_args()
 
-    train_ds = PretrainDataset()
+    #import my tokenizer
+
+    train_ds = PretrainDataset(data_path, tokenizer, max_length=args.max_seq_len)
 
 
 
     lm_config = GlmMoeDsaConfig(
+        vocab_size=tokenizer.vocab_size,
         hidden_size=args.hidden_size,
         num_hidden_layers=args.num_hidden_layers,
         num_attention_heads=4,
