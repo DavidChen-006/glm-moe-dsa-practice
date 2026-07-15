@@ -47,6 +47,7 @@ if __name__ == "__main__":
     tokenizer_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
 
+    data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "pretrain_shakespeare.jsonl")
     train_ds = PretrainDataset(data_path, tokenizer, max_length=args.max_seq_len)
 
     lm_config = GlmMoeDsaConfig(
