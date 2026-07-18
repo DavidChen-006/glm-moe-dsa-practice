@@ -137,6 +137,8 @@ class GlmMoeDsaTopkRouter(nn.Module):   # MoE add-on — deferred
         self.weight = nn.Parameter(torch.empty((config.n_routed_experts, config.hidden_size)))
         self.n_routed_experts = config.n_routed_experts
 
+        self.register_buffer("e_score_correction_bias", torch.zeros((self.n_routed_experts), dtype=torch.float32))
+
     def forward(self, hidden_states):
         hidden_states = hidden_states.view(-1, self.config.hidden_size)
         router_logits = F.linear(hidden_states.type(torch.float32), self.weight.type(torch.float32))
@@ -190,9 +192,20 @@ class GlmMoeDsaMoE(nn.Module):   # MoE add-on — deferred
             config=config, intermediate_size=config.moe_intermediate_size * config.n_shared_experts
         )
 
+        self.n_group = config.n_group
+
     def route_tokens_to_experts(self, router_logits):
 
+        # normalize
         router_logits = router_logits.sigmoid()
+
+        # add bias
+        router_logits_for_choice = router_logits + self.gate.e_score_correction_bias
+
+        group_scores = (
+            router_logits_for_choice.view
+        )
+
 
 
     def forward(self, hidden_states):
