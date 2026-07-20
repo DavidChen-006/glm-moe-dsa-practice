@@ -1,8 +1,7 @@
 """Row 3 test — the MoE path (TopkRouter + experts + shared expert). Arrange -> Act -> Assert.
 
-Currently RED: MoE forward produces nan. This test is the debugging loop —
-run `pytest david/tests/test_moe.py -x`, fix, re-run until green. Then it stays
-as the regression guard for the MoE path.
+Born RED (MoE forward produced nan — missing post_init/_init_weights), debugged
+to green; now the regression guard for the MoE path.
 """
 import os
 import sys
@@ -33,13 +32,23 @@ def make_config():
     return config
 
 
+def make_moe(config):
+    """Bare GlmMoeDsaMoE with params filled in. A bare module skips _init_weights
+    (that only runs via the full model's post_init), so its torch.empty params are
+    garbage — initialize here to test the LOGIC in isolation."""
+    torch.manual_seed(0)
+    moe = GlmMoeDsaMoE(config)
+    for param in moe.parameters():
+        torch.nn.init.normal_(param, mean=0.0, std=0.02)
+    return moe
+
+
 def test_router():
     # ---------- ARRANGE ----------
     # Contract per the reference (practice/glm copy): the router's forward returns
     # ONLY logits; top-k selection lives in GlmMoeDsaMoE.route_tokens_to_experts.
-    torch.manual_seed(0)
     config = make_config()
-    moe = GlmMoeDsaMoE(config)                  # moe.gate is the TopkRouter
+    moe = make_moe(config)                      # moe.gate is the TopkRouter
     x = torch.randn(2, 3, config.hidden_size)   # (batch=2, seq=3, hidden=128) -> 6 tokens
 
     # ---------- ACT ----------
@@ -58,9 +67,8 @@ def test_router():
 
 def test_moe_forward():
     # ---------- ARRANGE ----------
-    torch.manual_seed(0)
     config = make_config()
-    moe = GlmMoeDsaMoE(config)
+    moe = make_moe(config)
     x = torch.randn(2, 3, config.hidden_size)
 
     # ---------- ACT ----------

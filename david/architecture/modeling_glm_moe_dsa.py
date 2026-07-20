@@ -3,6 +3,7 @@ from collections.abc import Callable
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import init
 from transformers import GenerationMixin, GlmMoeDsaConfig, GradientCheckpointingLayer
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import CausalLMOutputWithPast
@@ -320,6 +321,14 @@ class GlmMoeDsaPreTrainedModel(PreTrainedModel):   # merged in from the separate
 
     def _init_weights(self, module):
         super()._init_weights(module)
+        # MoE params are torch.empty at construction — super() only covers Linear/Embedding,
+        # so they must be filled here (mirrors reference practice/glm _init_weights)
+        if isinstance(module, GlmMoeDsaTopkRouter):
+            init.normal_(module.weight, mean=0.0, std=self.config.initializer_range)
+            init.zeros_(module.e_score_correction_bias)
+        elif isinstance(module, GlmMoeDsaNaiveMoe):
+            init.normal_(module.up_proj, mean=0.0, std=self.config.initializer_range)
+            init.normal_(module.down_proj, mean=0.0, std=self.config.initializer_range)
 
 
 class GlmMoeDsaModel(GlmMoeDsaPreTrainedModel):
@@ -367,6 +376,7 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel, GenerationMixin):
         super().__init__(config)
         self.model = GlmMoeDsaModel(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.post_init()   # runs _init_weights over every module (fills the torch.empty MoE params)
 
     def forward(
         self,
